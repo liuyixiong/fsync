@@ -1,7 +1,7 @@
 import logging
 import os
 import sys
-from fsync.conf import LOGGER
+from fsync.conf import SynConfig
 
 class ColouredHandler(logging.StreamHandler):
     """ A colorful logging handler optimized for terminal debugging aesthetics.
@@ -169,9 +169,9 @@ def get_logger():
         # logging format
         fmt = logging.Formatter("[%(asctime)s] [%(levelname)s] %(filename)s:%(lineno)d %(message)s", "%H:%M:%S")
 
-        if LOGGER['PATH'] != '':
+        if SynConfig.config['log'] != '':
             # filehandler
-            fh = logging.FileHandler(LOGGER['PATH'])
+            fh = logging.FileHandler(SynConfig.config['log'])
             fh.setFormatter(fmt)
             fh.setLevel(logging.DEBUG)
             logger.addHandler(fh)
