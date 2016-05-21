@@ -2,8 +2,19 @@
 
 from fsync.baidupcsapi import BaiduPcsApi
 from fsync.conf import SynConfig
+import json
+import hashlib
+import os
 
 testdir = SynConfig.config['remotepath']+'/tests/pcsapi'
+
+def md5sum(filename, blocksize=65536):
+    hash = hashlib.md5()
+    with open(filename, "rb") as f:
+        for block in iter(lambda: f.read(blocksize), b""):
+            hash.update(block)
+    return hash.hexdigest()
+
 def test_quota():
     baidu = BaiduPcsApi()
     r = baidu.get_pcs_quota()
@@ -53,24 +64,43 @@ def test_get_filelist():
     r = baidu.rm_pcsfile(testdir+"/aa")
     assert r == 0
 
-def test_upload_file_nosync():
+def test_upload_file():
     baidu = BaiduPcsApi()
-    r = baidu.get_pcs_quota()
-    assert r == 0
     r = baidu.check_create_pcsdir(testdir)
     assert r == 0
-    r = baidu.upload_file_nosync('./tests/aaa.txt', testdir+"/aaa.txt")
+    r = baidu.upload_file('./tests/aaa.txt', testdir+"/aaa.txt")
     assert r == 0
-
+    md5 = md5sum("./tests/aaa.txt")
     filemeta = baidu.get_pcs_filemeta(testdir+"/aaa.txt")
     assert filemeta[0] == 0
     assert filemeta[1]["isdir"] == 0
+    block_list = json.loads(filemeta[1]["block_list"])
+    assert block_list[0] == md5
     r = baidu.rm_pcsfile(testdir+"/aaa.txt")
     assert r == 0
+
+def test_download_file():
+    baidu = BaiduPcsApi()
+    r = baidu.check_create_pcsdir(testdir)
+    assert r == 0
+    r = baidu.upload_file('./tests/aaa.txt', testdir+"/aaa.txt")
+    assert r == 0
+    md5 = md5sum("./tests/aaa.txt")
+    filemeta = baidu.get_pcs_filemeta(testdir+"/aaa.txt")
+    assert filemeta[0] == 0
+    assert filemeta[1]["isdir"] == 0
+    with open("./tests/bbb.txt", 'w') as dlfn:
+        pass
+    r = baidu.download_file('./tests/bbb.txt', testdir+"/aaa.txt", "0-%d" % filemeta[1]['size'])
+    assert r == 0
+    r = baidu.rm_pcsfile(testdir+"/aaa.txt")
+    assert r == 0
+    os.remove("./tests/bbb.txt")
 
 if __name__ == "__main__":
     test_quota()
     test_mkdir_cp_mv_rm()
     test_get_filemeta()
     test_get_filelist()
-    test_upload_file_nosync()
+    test_upload_file()
+    test_download_file()

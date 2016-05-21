@@ -173,7 +173,8 @@ class BaiduPcsApi:
         return 0, responses['list'][0]
 
     @staticmethod
-    def upload_file_nosync(filepath, pcspath):
+    def upload_file(filepath, pcspath):
+        logger.debug('start upload whole file "%s".' % (filepath))
         sycurl = SynCurl()
         url = 'https://c.pcs.baidu.com/rest/2.0/pcs/file'
         querydata = {
@@ -188,4 +189,22 @@ class BaiduPcsApi:
             logger.error('Errno:%d: Upload file to pcs failed: %s, %s.' % (retcode, filepath, responses['error_msg']))
             return 1
         logger.info(' Upload file "%s" completed.' % (filepath))
+        return 0
+
+    @staticmethod
+    def download_file(filepath, pcspath, filerange):
+        logger.debug('start download whole file "%s".' % (filepath))
+        sycurl = SynCurl()
+        url = 'https://d.pcs.baidu.com/rest/2.0/pcs/file'
+        querydata = {
+                'method': 'download',
+                'access_token': SynConfig.token['access_token'],
+                'path': pcspath
+                }
+        retcode, responses = sycurl.request(url, querydata, filerange, 'GET', SynCurl.Download, filepath)
+        if (retcode != 200 and retcode != 206) or responses != '':
+            responses = json.loads(responses)
+            logger.error('Errno:%d: Download file "%s" failed: %s.' % (retcode, pcspath, responses['error_msg']))
+            return 1
+        logger.info(' download file "%s" completed.' % (filepath))
         return 0

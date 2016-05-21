@@ -1,6 +1,7 @@
 import pycurl
 import traceback
 import time
+import os
 from urllib.parse import urlencode
 from fcntl import LOCK_EX, LOCK_SH, LOCK_NB, LOCK_UN, flock, lockf
 
