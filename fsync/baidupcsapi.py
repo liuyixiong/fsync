@@ -1,5 +1,8 @@
 import json
 import os
+import hashlib
+import binascii
+import time
 
 from fsync.common.log import logger
 from fsync.conf import SynConfig
@@ -192,8 +195,112 @@ class BaiduPcsApi:
         return 0
 
     @staticmethod
+    def __rapid_checkcode(filepath):
+        with open(filepath, 'rb') as fh:
+            m = hashlib.md5()
+            fbuffer = fh.read(8192)
+            crc = 0
+            while fbuffer:
+                m.update(fbuffer)
+                crc = binascii.crc32(fbuffer, crc) & 0xffffffff
+                fbuffer = fh.read(8192)
+            cmd5 = m.hexdigest()
+            m = hashlib.md5()
+            fh.seek(0)
+            for i in range(32):
+                fbuffer = fh.read(8192)
+                m.update(fbuffer)
+        return '%x' % crc, cmd5, m.hexdigest()
+
+    @staticmethod
+    def rapid_uploadfile(filepath, pcspath):
+        if os.stat(filepath).st_size <= 262144:
+            logger.error('Rapid upload file "%s" failed: flie size must be greater than or equal to 256KB.' % ( filepath))
+            return 1
+
+        logger.debug('start rapid upload file "%s".' % (filepath))
+        crc, contentmd5, slicemd5 = BaiduPcsApi.__rapid_checkcode(filepath)
+        sycurl = SynCurl()
+        url = 'https://pcs.baidu.com/rest/2.0/pcs/file'
+        querydata = {
+                'method': 'rapidupload',
+                'access_token': SynConfig.token['access_token'],
+                'path': pcspath,
+                'content-length': os.stat(filepath).st_size,
+                'content-md5': contentmd5,
+                'slice-md5': slicemd5,
+                'content-crc32': crc,
+                'ondup': 'newcopy'
+                }
+        retcode, responses = sycurl.request(url, querydata, '', 'POST', SynCurl.Normal)
+        responses = json.loads(responses)
+        if retcode != 200 or 'error_code' in responses:
+            if responses['error_code'] == 31079:
+                logger.info(' File md5 not found, will upload the whole file "%s".' % (filepath))
+                return 1
+            else:
+                logger.error('Errno:%d: Rapid upload file "%s" failed: %s.' % (retcode, filepath, responses['error_msg']))
+                return 1
+        else:
+            time.sleep(1)
+            url = 'https://pcs.baidu.com/rest/2.0/pcs/file'
+            querydata = {
+                    'method': 'meta',
+                    'access_token': SynConfig.token['access_token'],
+                    'path': pcspath
+                    }
+            retcode, responses = sycurl.request(url, querydata, '', 'GET', SynCurl.Normal)
+            responses = json.loads(responses)
+            if retcode != 200 or 'error_code' in responses:
+                logger.error('Errno:%d: File "%s" is rapid uploaded, but get remote file\'s mate failed: %s.' % (retcode, filepath, responses['error_msg']))
+                return 1
+            responses = responses['list'][0]
+            if responses['size'] == os.stat(filepath).st_size:
+                logger.info(' Rapid upload file "%s" completed.' % (filepath))
+                return 0
+            else:
+                logger.error('File "%s" is rapid uploaded, but remote file size not equal to local.' % (filepath))
+                return 1
+
+    @staticmethod
+    def slice_upload_tmpfile(filepath, filerange):
+        logger.debug('start slice upload file "%s".' % (filepath))
+        sycurl = SynCurl()
+        url = 'https://c.pcs.baidu.com/rest/2.0/pcs/file'
+        querydata = {
+                'method': 'upload',
+                'access_token': SynConfig.token['access_token'],
+                'type': 'tmpfile'
+                }
+        retcode, responses = sycurl.request(url, querydata, filerange, 'POST', SynCurl.Upload, filepath)
+        responses = json.loads(responses)
+        if retcode == 200:
+            return 0, responses['md5']
+        else:
+            logger.error('Errno:%d: Upload file "%s"\'s extra slice failed: %s.' % (retcode, filepath, responses['error_msg']))
+            return 1, None
+
+    @staticmethod
+    def slice_upload_createsuperfile(pcspath, param):
+        sycurl = SynCurl()
+        url = 'https://pcs.baidu.com/rest/2.0/pcs/file'
+        querydata = {
+                'method': 'createsuperfile',
+                'access_token': SynConfig.token['access_token'],
+                'path': pcspath,
+                'ondup': 'newcopy'
+                }
+        retcode, responses = sycurl.request(url, querydata, {'param': json.dumps(param)}, 'POST', SynCurl.Normal)
+        responses = json.loads(responses)
+        if retcode != 200 or 'error_code' in responses:
+            logger.error('Errno:%d: Create superfile "%s" failed: %s.' % (retcode, pcspath, responses['error_msg']))
+            return 1
+        logger.info(' Slice upload file "%s" completed.' % (pcspath))
+        return 0
+
+    @staticmethod
     def download_file(filepath, pcspath, filerange):
-        logger.debug('start download whole file "%s".' % (filepath))
+        logger.debug('start download file "%s" : range %s.' % (filepath, filerange))
         sycurl = SynCurl()
         url = 'https://d.pcs.baidu.com/rest/2.0/pcs/file'
         querydata = {

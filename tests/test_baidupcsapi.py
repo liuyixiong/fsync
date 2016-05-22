@@ -97,6 +97,44 @@ def test_download_file():
     assert r == 0
     os.remove("./tests/bbb.txt")
 
+def test_rapid_uploadfile():
+    baidu = BaiduPcsApi()
+    r = baidu.check_create_pcsdir(testdir)
+    assert r == 0
+    r = baidu.rapid_uploadfile('./tests/aaa.txt', testdir+"/aaa.txt")
+    assert r == 0
+    md5 = md5sum("./tests/aaa.txt")
+    filemeta = baidu.get_pcs_filemeta(testdir+"/aaa.txt")
+    assert filemeta[0] == 0
+    assert filemeta[1]["isdir"] == 0
+    block_list = json.loads(filemeta[1]["block_list"])
+    assert block_list[0] == md5
+    r = baidu.rm_pcsfile(testdir+"/aaa.txt")
+    assert r == 0
+
+def test_sclie_uploadfile():
+    param = { "block_list":[] }
+    baidu = BaiduPcsApi()
+    r = baidu.check_create_pcsdir(testdir)
+    assert r == 0
+    filesize = os.stat("./tests/aaa.txt").st_size
+    scliesize= filesize//3
+    r, md5 = baidu.slice_upload_tmpfile("./tests/aaa.txt", "0-%d" % scliesize)
+    assert r == 0
+    print(md5)
+    param["block_list"].append(md5)
+    r, md5 = baidu.slice_upload_tmpfile("./tests/aaa.txt", "%d-%d" % (scliesize+1, 2*scliesize))
+    assert r == 0
+    print(md5)
+    param["block_list"].append(md5)
+    r, md5 = baidu.slice_upload_tmpfile("./tests/aaa.txt", "%d-%d" % (2*scliesize+1, filesize-1))
+    assert r == 0
+    print(md5)
+    param["block_list"].append(md5)
+    print(param)
+    r = baidu.slice_upload_createsuperfile(testdir+"/aaa.txt", param)
+    assert r == 0
+
 if __name__ == "__main__":
     test_quota()
     test_mkdir_cp_mv_rm()
@@ -104,3 +142,5 @@ if __name__ == "__main__":
     test_get_filelist()
     test_upload_file()
     test_download_file()
+    #test_rapid_uploadfile()
+    #test_sclie_uploadfile()
